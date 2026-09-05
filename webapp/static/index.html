@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fastest Racer</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <h1>Fastest Racer</h1>
+    <p class="subtitle">Find the ideal racing line: quasi-steady-state lap simulation over a full vehicle model.</p>
+  </header>
+
+  <main>
+    <section class="controls">
+      <label>
+        Track
+        <select id="trackSelect"></select>
+      </label>
+      <label>
+        Car
+        <select id="carSelect"></select>
+      </label>
+      <label>
+        Sample spacing (m)
+        <input type="number" id="spacing" value="3" min="1" max="15" step="0.5" />
+      </label>
+      <label>
+        Max iterations
+        <input type="number" id="maxiter" value="120" min="10" max="400" step="10" />
+      </label>
+      <button id="runBtn">Run simulation</button>
+      <div id="status"></div>
+    </section>
+
+    <section class="results">
+      <canvas id="trackCanvas" width="760" height="620"></canvas>
+      <div class="side-panel">
+        <div class="stat-block">
+          <div class="stat"><span class="label">Centerline</span><span id="baselineTime" class="value">–</span></div>
+          <div class="stat"><span class="label">Optimized</span><span id="optimizedTime" class="value highlight">–</span></div>
+          <div class="stat"><span class="label">Gain</span><span id="gainTime" class="value">–</span></div>
+        </div>
+        <canvas id="speedCanvas" width="360" height="220"></canvas>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

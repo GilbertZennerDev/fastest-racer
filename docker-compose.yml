@@ -1,0 +1,21 @@
+services:
+  fastest-racer:
+    image: fastest-racer:latest
+    build:
+      context: .
+    restart: unless-stopped
+    # No ports published — the shared edge Caddy in ../feierblum-networking's
+    # stack reverse-proxies to this container by service name over the
+    # shared network below, so this app never binds 80/443 on the host itself.
+    expose:
+      - "8000"
+    networks:
+      - default
+      - edge
+
+networks:
+  # The shared edge Caddy on this Hetzner box is feierblum-caddy-1, part of
+  # the feierblum-networking compose stack — not deployed from this repo.
+  edge:
+    name: feierblum_default
+    external: true

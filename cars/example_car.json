@@ -1,0 +1,30 @@
+{
+  "name": "GT3-class prototype",
+  "mass_kg": 1250.0,
+  "wheelbase_m": 2.65,
+  "track_width_front_m": 1.65,
+  "track_width_rear_m": 1.6,
+  "cg_height_m": 0.28,
+  "weight_dist_front": 0.47,
+  "roll_stiffness_front_frac": 0.55,
+  "ClA_front": 1.2,
+  "ClA_rear": 1.6,
+  "CdA": 1.1,
+  "air_density": 1.225,
+  "max_power_kw": 410.0,
+  "drivetrain": "RWD",
+  "max_engine_accel_mps2": 10.0,
+  "max_brake_decel_mps2": 40.0,
+  "tires": {
+    "B_lat": 10.5,
+    "C_lat": 1.9,
+    "D_lat": 1.55,
+    "E_lat": 0.97,
+    "B_long": 11.0,
+    "C_long": 1.65,
+    "D_long": 1.5,
+    "E_long": 0.97,
+    "nominal_load_N": 3500.0,
+    "load_sensitivity": 0.12
+  }
+}

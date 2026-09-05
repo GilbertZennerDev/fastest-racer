@@ -1,0 +1,7 @@
+numpy
+scipy
+matplotlib
+numba
+fastapi
+uvicorn[standard]
+pydantic
