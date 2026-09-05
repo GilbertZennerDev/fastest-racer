@@ -81,6 +81,7 @@ def simulate(req: SimulateRequest):
     return {
         "track_name": track.name,
         "car_name": car.name,
+        "track_length_m": float(np.sum(baseline["ds"])),
         "baseline_lap_time": baseline["lap_time"],
         "optimized_lap_time": final["lap_time"],
         "improvement_s": baseline["lap_time"] - final["lap_time"],
@@ -88,6 +89,10 @@ def simulate(req: SimulateRequest):
         "speed_mps": final["speed"].tolist(),
         "curvature": final["kappa"].tolist(),
         "distance_m": np.cumsum(final["ds"]).tolist(),
+        "dt_s": final["dt"].tolist(),
+        "baseline_speed_mps": baseline["speed"].tolist(),
+        "baseline_distance_m": np.cumsum(baseline["ds"]).tolist(),
+        "baseline_dt_s": baseline["dt"].tolist(),
         "left_edge": left.tolist(),
         "right_edge": right.tolist(),
         "history": history,
