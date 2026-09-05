@@ -15,6 +15,7 @@ const ggCanvas = document.getElementById("ggCanvas");
 
 let tracks = {};
 let cars = {};
+let worker = null;
 
 const G = 9.81;
 const SPEED_LO = [67, 97, 238]; // #4361ee
@@ -303,32 +304,33 @@ function drawGGDiagram(result) {
   ctx.fillText("lat", w - pad - 20, cy - 6);
 }
 
-async function runSimulation() {
+function runSimulation() {
   const trackKey = trackSelect.value;
   const carKey = carSelect.value;
   if (!trackKey || !carKey) return;
 
   setLoading(true);
-  setStatus("Building GG-diagram and optimizing line…");
+  setStatus("Running locally in your browser — building GG-diagram…");
 
-  try {
-    const res = await fetch("/api/simulate", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        track: tracks[trackKey],
-        car: cars[carKey],
-        spacing: parseFloat(spacingInput.value),
-        maxiter: parseInt(maxiterInput.value, 10),
-      }),
-    });
+  if (worker) worker.terminate();
+  worker = new Worker("physics/worker.js");
 
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `HTTP ${res.status}`);
+  worker.onmessage = (e) => {
+    const msg = e.data;
+
+    if (msg.type === "progress") {
+      setStatus(`Optimizing locally… iteration ${msg.iter + 1}/${msg.total} — ${msg.lapTime.toFixed(3)} s`);
+      return;
     }
 
-    const result = await res.json();
+    if (msg.type === "error") {
+      setStatus(`Error: ${msg.message}`, true);
+      setLoading(false);
+      return;
+    }
+
+    // type === "done"
+    const result = msg.result;
 
     trackMetaEl.hidden = false;
     document.getElementById("metaTrackName").textContent = result.track_name;
@@ -351,12 +353,21 @@ async function runSimulation() {
     drawSpeedProfile(result);
     drawDeltaChart(result);
     drawGGDiagram(result);
-    setStatus(`Done — ${result.history.length} optimizer iterations.`);
-  } catch (e) {
-    setStatus(`Error: ${e.message}`, true);
-  } finally {
+    setStatus(`Done (ran entirely in-browser) — ${result.history.length} optimizer iterations.`);
     setLoading(false);
-  }
+  };
+
+  worker.onerror = (err) => {
+    setStatus(`Error: ${err.message}`, true);
+    setLoading(false);
+  };
+
+  worker.postMessage({
+    track: tracks[trackKey],
+    car: cars[carKey],
+    spacing: parseFloat(spacingInput.value),
+    maxiter: parseInt(maxiterInput.value, 10),
+  });
 }
 
 spacingInput.addEventListener("input", () => { spacingOut.textContent = parseFloat(spacingInput.value).toFixed(1); });
