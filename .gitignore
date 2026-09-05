@@ -6,3 +6,9 @@ result.json
 *.tar
 node_modules/
 .venv/
+.claude
+build/
+*.pyd
+*.dll
+*.o
+*.def
