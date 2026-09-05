@@ -65,11 +65,25 @@ def _corner_speed_limit_core(v_grid, a_lat_grid, kappa, v_max_grid, iters):
 
 
 @njit(cache=True, fastmath=True)
-def _forward_pass_core(v_grid, a_acc_grid, v_corner, ds):
+def _ellipse_long_accel(v_i, kappa_i, v_grid, a_lat_grid, a_long_grid):
+    """Friction-ellipse coupling: available longitudinal accel shrinks as
+    more of the tires' grip budget is already spent on cornering.
+    a_long_avail = a_long_max(v) * sqrt(1 - (a_lat_used/a_lat_max(v))^2)."""
+    a_lat_max = _interp1(v_i, v_grid, a_lat_grid)
+    a_long_max = _interp1(v_i, v_grid, a_long_grid)
+    a_lat_used = v_i * v_i * abs(kappa_i)
+    ratio = a_lat_used / a_lat_max if a_lat_max > 1e-9 else 1.0
+    if ratio > 1.0:
+        ratio = 1.0
+    return a_long_max * np.sqrt(max(0.0, 1.0 - ratio * ratio))
+
+
+@njit(cache=True, fastmath=True)
+def _forward_pass_core(v_grid, a_lat_grid, a_acc_grid, v_corner, ds, kappa):
     n = v_corner.shape[0]
     v = v_corner.copy()
     for i in range(n - 1):
-        a = _interp1(v[i], v_grid, a_acc_grid)
+        a = _ellipse_long_accel(v[i], kappa[i], v_grid, a_lat_grid, a_acc_grid)
         v_lim = np.sqrt(v[i] ** 2 + 2 * a * ds[i])
         if v_lim < v[i + 1]:
             v[i + 1] = v_lim
@@ -77,11 +91,11 @@ def _forward_pass_core(v_grid, a_acc_grid, v_corner, ds):
 
 
 @njit(cache=True, fastmath=True)
-def _backward_pass_core(v_grid, a_brk_grid, v_in, ds):
+def _backward_pass_core(v_grid, a_lat_grid, a_brk_grid, v_in, ds, kappa):
     n = v_in.shape[0]
     v = v_in.copy()
     for i in range(n - 1, 0, -1):
-        a = _interp1(v[i], v_grid, a_brk_grid)
+        a = _ellipse_long_accel(v[i], kappa[i], v_grid, a_lat_grid, a_brk_grid)
         v_lim = np.sqrt(v[i] ** 2 + 2 * a * ds[i - 1])
         if v_lim < v[i - 1]:
             v[i - 1] = v_lim
@@ -95,16 +109,22 @@ def corner_speed_limit(gg, kappa, v_max_grid=120.0, iters=20):
     return _corner_speed_limit_core(gg["v"], gg["a_lat"], kappa, float(v_max_grid), int(iters))
 
 
-def forward_pass(gg, v_corner, ds):
+def forward_pass(gg, v_corner, ds, kappa=None):
     v_corner = np.ascontiguousarray(v_corner, dtype=np.float64)
     ds = np.ascontiguousarray(ds, dtype=np.float64)
-    return _forward_pass_core(gg["v"], gg["a_acc"], v_corner, ds)
+    if kappa is None:
+        kappa = np.zeros_like(v_corner)
+    kappa = np.ascontiguousarray(kappa, dtype=np.float64)
+    return _forward_pass_core(gg["v"], gg["a_lat"], gg["a_acc"], v_corner, ds, kappa)
 
 
-def backward_pass(gg, v, ds):
+def backward_pass(gg, v, ds, kappa=None):
     v = np.ascontiguousarray(v, dtype=np.float64)
     ds = np.ascontiguousarray(ds, dtype=np.float64)
-    return _backward_pass_core(gg["v"], gg["a_brk"], v, ds)
+    if kappa is None:
+        kappa = np.zeros_like(v)
+    kappa = np.ascontiguousarray(kappa, dtype=np.float64)
+    return _backward_pass_core(gg["v"], gg["a_lat"], gg["a_brk"], v, ds, kappa)
 
 
 def warmup(gg):
@@ -115,8 +135,8 @@ def warmup(gg):
     dummy_k = np.array([1e-3, 1e-2])
     dummy_ds = np.array([1.0, 1.0])
     v = corner_speed_limit(gg, dummy_k)
-    v = forward_pass(gg, v, dummy_ds)
-    backward_pass(gg, v, dummy_ds)
+    v = forward_pass(gg, v, dummy_ds, dummy_k)
+    backward_pass(gg, v, dummy_ds, dummy_k)
 
 
 def simulate_lap(track_r, alpha, car, gg, closed_laps=2):
@@ -134,15 +154,16 @@ def simulate_lap(track_r, alpha, car, gg, closed_laps=2):
         reps = max(closed_laps, 2)
         v_c = np.tile(v_corner, reps)
         ds_rep = np.tile(ds, reps)
-        v_f = forward_pass(gg, v_c, ds_rep)
-        v_b = backward_pass(gg, v_f, ds_rep)
+        kappa_rep = np.tile(kappa, reps)
+        v_f = forward_pass(gg, v_c, ds_rep, kappa_rep)
+        v_b = backward_pass(gg, v_f, ds_rep, kappa_rep)
         n = track_r.n
         mid = reps // 2
         v = v_b[mid * n:(mid + 1) * n]
         ds_mid = ds
     else:
-        v_f = forward_pass(gg, v_corner, ds)
-        v = backward_pass(gg, v_f, ds)
+        v_f = forward_pass(gg, v_corner, ds, kappa)
+        v = backward_pass(gg, v_f, ds, kappa)
         ds_mid = ds
 
     dt = ds_mid / np.maximum(v, 0.1)

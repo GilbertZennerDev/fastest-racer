@@ -210,6 +210,24 @@ class TestLapSim:
         v_out = lap_sim.backward_pass(gg, v.copy(), ds)
         assert np.all(v_out <= v + 1e-6)
 
+    def test_cornering_load_reduces_available_acceleration(self, gg):
+        # same speed and straight-line distance, but with nonzero curvature
+        # (i.e. mid-corner) the friction ellipse must leave less longitudinal
+        # grip, so the car should accelerate less than it would in a straight
+        # line at the same starting speed.
+        v_start = np.array([30.0, 120.0])
+        ds = np.array([20.0])
+        v_straight = lap_sim.forward_pass(gg, v_start.copy(), ds, kappa=np.array([0.0, 0.0]))
+        v_cornering = lap_sim.forward_pass(gg, v_start.copy(), ds, kappa=np.array([0.02, 0.02]))
+        assert v_cornering[1] < v_straight[1]
+
+    def test_zero_kappa_matches_no_kappa_default(self, gg):
+        v_start = np.array([30.0, 30.0])
+        ds = np.array([20.0])
+        v_default = lap_sim.forward_pass(gg, v_start.copy(), ds)
+        v_explicit_zero = lap_sim.forward_pass(gg, v_start.copy(), ds, kappa=np.array([0.0, 0.0]))
+        assert v_default == pytest.approx(v_explicit_zero)
+
 
 # ---------------------------------------------------------------------------
 # line optimizer (slow — mark for optional skip)
