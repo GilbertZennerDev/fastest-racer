@@ -1,0 +1,30 @@
+{
+  "name": "F1 2024-spec (generic)",
+  "mass_kg": 798.0,
+  "wheelbase_m": 3.6,
+  "track_width_front_m": 1.6,
+  "track_width_rear_m": 1.55,
+  "cg_height_m": 0.25,
+  "weight_dist_front": 0.46,
+  "roll_stiffness_front_frac": 0.52,
+  "ClA_front": 1.3,
+  "ClA_rear": 2.0,
+  "CdA": 0.95,
+  "air_density": 1.225,
+  "max_power_kw": 670.0,
+  "drivetrain": "RWD",
+  "max_engine_accel_mps2": 14.0,
+  "max_brake_decel_mps2": 55.0,
+  "tires": {
+    "B_lat": 12.0,
+    "C_lat": 1.9,
+    "D_lat": 1.9,
+    "E_lat": 0.97,
+    "B_long": 13.0,
+    "C_long": 1.65,
+    "D_long": 1.8,
+    "E_long": 0.97,
+    "nominal_load_N": 3500.0,
+    "load_sensitivity": 0.10
+  }
+}

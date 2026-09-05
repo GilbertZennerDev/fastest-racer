@@ -4,14 +4,34 @@ corner-speed limit -> forward accel pass -> backward brake pass, then
 integrate lap time.
 
 The per-point recurrences (forward/backward pass, corner-speed fixed point)
-are inherently sequential, so they're JIT-compiled with numba: each one
-degrades to a tight scalar loop with a hand-rolled binary-search interp,
-avoiding per-element numpy/np.interp call overhead. This is the dominant
-cost during line optimization since it's re-run on every objective/gradient
-evaluation. Falls back to pure numpy if numba isn't installed.
+are inherently sequential, so they're compiled: preferentially via a fused
+C++ extension (f1sim._fastcore, built with setup.py) that does the whole
+corner-limit -> forward -> backward -> lap_time march in one native call
+with no per-call Python/numpy dispatch overhead, since this is re-run on
+every objective/gradient evaluation during line optimization. Falls back to
+numba (JIT, still native machine code but with per-call Python boundary
+crossings) and then to pure numpy if neither is available.
 """
 import numpy as np
 from . import vehicle_dynamics as vd
+
+try:
+    from . import _fastcore
+    _FASTCORE_AVAILABLE = True
+except ImportError:
+    _FASTCORE_AVAILABLE = False
+
+# Benchmarked on real tracks (~300-600 samples/lap): numba's LLVM JIT already
+# hits native speed for these small, sequential, memory-bound loops, and our
+# hand-written C-API extension is actually slower per call because six
+# PyArray_FROM_OTF conversions + one PyArray_SimpleNew + a Py_BuildValue
+# tuple cost more than the compute itself saves by fusing 3 calls into 1.
+# fastcore is kept available (and correct) for future use — e.g. batching
+# many SLSQP finite-difference perturbations into a single C++ call, which
+# would actually amortize that marshalling cost — but numba stays the
+# default hot path. Set F1SIM_FORCE_FASTCORE=1 to use it anyway.
+import os
+_FASTCORE = _FASTCORE_AVAILABLE and os.environ.get("F1SIM_FORCE_FASTCORE") == "1"
 
 try:
     from numba import njit
@@ -106,6 +126,8 @@ def corner_speed_limit(gg, kappa, v_max_grid=120.0, iters=20):
     """v such that a_lat_max(v) == v^2 * |kappa|, solved per-point via
     fixed-point iteration (a_lat_max is a mild function of v)."""
     kappa = np.ascontiguousarray(kappa, dtype=np.float64)
+    if _FASTCORE:
+        return _fastcore.corner_speed_limit(gg["v"], gg["a_lat"], kappa, float(v_max_grid), int(iters))
     return _corner_speed_limit_core(gg["v"], gg["a_lat"], kappa, float(v_max_grid), int(iters))
 
 
@@ -115,6 +137,8 @@ def forward_pass(gg, v_corner, ds, kappa=None):
     if kappa is None:
         kappa = np.zeros_like(v_corner)
     kappa = np.ascontiguousarray(kappa, dtype=np.float64)
+    if _FASTCORE:
+        return _fastcore.forward_pass(gg["v"], gg["a_lat"], gg["a_acc"], v_corner, ds, kappa)
     return _forward_pass_core(gg["v"], gg["a_lat"], gg["a_acc"], v_corner, ds, kappa)
 
 
@@ -124,13 +148,15 @@ def backward_pass(gg, v, ds, kappa=None):
     if kappa is None:
         kappa = np.zeros_like(v)
     kappa = np.ascontiguousarray(kappa, dtype=np.float64)
+    if _FASTCORE:
+        return _fastcore.backward_pass(gg["v"], gg["a_lat"], gg["a_brk"], v, ds, kappa)
     return _backward_pass_core(gg["v"], gg["a_lat"], gg["a_brk"], v, ds, kappa)
 
 
 def warmup(gg):
     """Trigger numba JIT compilation once, up front, so the cost doesn't
     land inside the first optimizer iteration."""
-    if not _NUMBA:
+    if _FASTCORE or not _NUMBA:
         return
     dummy_k = np.array([1e-3, 1e-2])
     dummy_ds = np.array([1.0, 1.0])
@@ -147,6 +173,19 @@ def simulate_lap(track_r, alpha, car, gg, closed_laps=2):
     consistently; this concatenation approximates that cheaply)."""
     kappa, path = track_r.curvature_of_offset(alpha)
     ds = track_r.path_length(alpha)
+
+    if _FASTCORE:
+        kappa_c = np.ascontiguousarray(kappa, dtype=np.float64)
+        ds_c = np.ascontiguousarray(ds, dtype=np.float64)
+        reps = max(closed_laps, 2) if track_r.closed else 1
+        v, lap_time = _fastcore.simulate_core(
+            gg["v"], gg["a_lat"], gg["a_acc"], gg["a_brk"], kappa_c, ds_c, 120.0, 20, reps
+        )
+        ds_mid = ds
+        return {
+            "path": path, "kappa": kappa, "speed": v, "ds": ds_mid,
+            "dt": ds_mid / np.maximum(v, 0.1), "lap_time": lap_time,
+        }
 
     v_corner = corner_speed_limit(gg, kappa)
 
