@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Fastest Racer</title>
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="brand-mark">◆</span>
+      <div>
+        <h1>Fastest Racer</h1>
+        <p class="subtitle">Full-vehicle quasi-steady-state lap simulation &amp; racing-line optimization.</p>
+      </div>
+    </div>
+    <div class="track-meta" id="trackMeta" hidden>
+      <span id="metaTrackName">–</span>
+      <span class="dot">·</span>
+      <span id="metaLength">–</span>
+      <span class="dot">·</span>
+      <span id="metaCarName">–</span>
+    </div>
+    <div class="account-bar" id="accountBar">
+      <a href="/" class="btn-ghost-sm">← Home</a>
+      <span id="accountStatus">–</span>
+      <a href="#" id="accountAction" class="btn-primary-sm" hidden>Upgrade to Pro</a>
+    </div>
+  </header>
+
+  <main>
+    <section class="controls">
+      <label>
+        <span class="label-text">Track</span>
+        <select id="trackSelect"></select>
+      </label>
+      <label>
+        <span class="label-text">Car</span>
+        <select id="carSelect"></select>
+      </label>
+      <label class="slider-field">
+        <span class="label-text">Sample spacing <output id="spacingOut">3.0</output> m</span>
+        <input type="range" id="spacing" value="3" min="1" max="15" step="0.5" />
+      </label>
+      <label class="slider-field">
+        <span class="label-text">Max iterations <output id="maxiterOut">120</output></span>
+        <input type="range" id="maxiter" value="120" min="10" max="400" step="10" />
+      </label>
+      <button id="runBtn">
+        <span class="btn-spinner" hidden></span>
+        <span class="btn-label">Run simulation</span>
+      </button>
+    </section>
+    <div id="status" class="status" role="status"></div>
+
+    <section class="results" id="results" hidden>
+      <div class="map-panel">
+        <div class="panel-head">
+          <h2>Racing line</h2>
+          <div class="legend" id="speedLegend">
+            <span class="legend-label" id="legendMin">–</span>
+            <span class="legend-bar"></span>
+            <span class="legend-label" id="legendMax">–</span>
+            <span class="legend-unit">km/h</span>
+          </div>
+        </div>
+        <canvas id="trackCanvas" width="760" height="620"></canvas>
+      </div>
+
+      <div class="side-panel">
+        <div class="stat-grid">
+          <div class="stat">
+            <span class="label">Baseline (centerline)</span>
+            <span id="baselineTime" class="value">–</span>
+          </div>
+          <div class="stat">
+            <span class="label">Optimized</span>
+            <span id="optimizedTime" class="value highlight">–</span>
+          </div>
+          <div class="stat">
+            <span class="label">Gain</span>
+            <span id="gainTime" class="value gain">–</span>
+          </div>
+          <div class="stat">
+            <span class="label">Top speed</span>
+            <span id="topSpeed" class="value">–</span>
+          </div>
+          <div class="stat">
+            <span class="label">Avg speed</span>
+            <span id="avgSpeed" class="value">–</span>
+          </div>
+          <div class="stat">
+            <span class="label">Min corner speed</span>
+            <span id="minSpeed" class="value">–</span>
+          </div>
+        </div>
+
+        <div class="chart-card">
+          <h3>Speed vs distance</h3>
+          <canvas id="speedCanvas" width="420" height="180"></canvas>
+        </div>
+
+        <div class="chart-card">
+          <h3>Where the line gains time</h3>
+          <p class="chart-hint">Cumulative time saved vs. the centerline, by track distance</p>
+          <canvas id="deltaCanvas" width="420" height="150"></canvas>
+        </div>
+
+        <div class="chart-card">
+          <h3>G-G diagram</h3>
+          <p class="chart-hint">Lateral vs. longitudinal acceleration envelope actually used</p>
+          <canvas id="ggCanvas" width="420" height="260"></canvas>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

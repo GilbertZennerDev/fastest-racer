@@ -9,9 +9,23 @@ services:
     # shared network below, so this app never binds 80/443 on the host itself.
     expose:
       - "8000"
+    volumes:
+      # Persists the user/subscription SQLite DB across `--force-recreate`
+      # deploys — without this, every deploy would silently reset every
+      # account and subscription record.
+      - fastest-racer-data:/data
+    env_file:
+      # Optional: STRIPE_SECRET_KEY, STRIPE_PRICE_ID_PRO, STRIPE_WEBHOOK_SECRET,
+      # SESSION_SECRET_KEY, PUBLIC_BASE_URL. The app runs fine without it —
+      # billing endpoints just report "not configured" until it's added.
+      - path: .env
+        required: false
     networks:
       - default
       - edge
+
+volumes:
+  fastest-racer-data:
 
 networks:
   # The shared edge Caddy on this Hetzner box is feierblum-caddy-1, part of

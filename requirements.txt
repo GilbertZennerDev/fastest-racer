@@ -5,3 +5,5 @@ numba
 fastapi
 uvicorn[standard]
 pydantic
+itsdangerous
+stripe

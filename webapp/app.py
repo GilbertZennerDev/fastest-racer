@@ -4,10 +4,11 @@ frontend that visualizes the result on a canvas.
 """
 import json
 from pathlib import Path
+from typing import Optional
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, HTTPException, Request, Response
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -20,11 +21,23 @@ from f1sim import vehicle_dynamics as vd
 from f1sim import lap_sim
 from f1sim.line_optimizer import optimize_line
 
+from . import auth
+from . import billing
+
 BASE_DIR = Path(__file__).resolve().parent
 ROOT_DIR = BASE_DIR.parent
 STATIC_DIR = BASE_DIR / "static"
 
 app = FastAPI(title="Fastest Racer")
+auth.init_db()
+
+# Content gating for the SaaS tiers: the synthetic demo track/car are free so
+# anyone can try the tool; everything requiring real-world data curation
+# (actual F1 circuits, an accuracy-checked F1 car model) is the Pro perk —
+# that curation work is the actual product being sold, since the simulator
+# code itself runs client-side and is not something a paywall can hide.
+FREE_TRACKS = {"example_track"}
+FREE_CARS = {"example_car"}
 
 
 class SimulateRequest(BaseModel):
@@ -47,14 +60,112 @@ BUNDLED_TRACKS = _load_bundled(ROOT_DIR / "tracks")
 BUNDLED_CARS = _load_bundled(ROOT_DIR / "cars")
 
 
+def _is_pro(user: Optional[dict]) -> bool:
+    return bool(user and user.get("tier") == "pro")
+
+
 @app.get("/api/tracks")
-def list_tracks():
-    return {key: val for key, val in BUNDLED_TRACKS.items()}
+def list_tracks(user: Optional[dict] = Depends(auth.get_current_user)):
+    pro = _is_pro(user)
+    out = {}
+    for key, val in BUNDLED_TRACKS.items():
+        if key in FREE_TRACKS or pro:
+            out[key] = val
+        else:
+            out[key] = {"name": val.get("name", key), "locked": True}
+    return out
 
 
 @app.get("/api/cars")
-def list_cars():
-    return {key: val for key, val in BUNDLED_CARS.items()}
+def list_cars(user: Optional[dict] = Depends(auth.get_current_user)):
+    pro = _is_pro(user)
+    out = {}
+    for key, val in BUNDLED_CARS.items():
+        if key in FREE_CARS or pro:
+            out[key] = val
+        else:
+            out[key] = {"name": val.get("name", key), "locked": True}
+    return out
+
+
+# --- Auth -------------------------------------------------------------
+
+class SignupRequest(BaseModel):
+    email: str
+    password: str = Field(min_length=8)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+def _set_session_cookie(response: Response, user_id: int):
+    response.set_cookie(
+        auth.COOKIE_NAME,
+        auth.make_session_cookie(user_id),
+        max_age=auth.COOKIE_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+@app.post("/api/auth/signup")
+def signup(req: SignupRequest, response: Response):
+    user_id = auth.create_user(req.email, req.password)
+    _set_session_cookie(response, user_id)
+    return {"email": req.email.strip().lower(), "tier": "free"}
+
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest, response: Response):
+    user = auth.verify_login(req.email, req.password)
+    _set_session_cookie(response, user["id"])
+    return {"email": user["email"], "tier": user["tier"]}
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    response.delete_cookie(auth.COOKIE_NAME)
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(user: Optional[dict] = Depends(auth.get_current_user)):
+    if user is None:
+        return {"logged_in": False}
+    return {"logged_in": True, "email": user["email"], "tier": user["tier"]}
+
+
+# --- Billing ------------------------------------------------------------
+
+@app.post("/api/billing/checkout")
+def billing_checkout(user: dict = Depends(auth.require_user)):
+    try:
+        url = billing.create_checkout_session(user)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    return {"url": url}
+
+
+@app.post("/api/billing/portal")
+def billing_portal(user: dict = Depends(auth.require_user)):
+    try:
+        url = billing.create_portal_session(user)
+    except RuntimeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return {"url": url}
+
+
+@app.post("/api/billing/webhook")
+async def billing_webhook(request: Request):
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+    try:
+        event_type = billing.handle_webhook(payload, sig_header)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Webhook error: {e}")
+    return {"received": True, "type": event_type}
 
 
 @app.post("/api/simulate")

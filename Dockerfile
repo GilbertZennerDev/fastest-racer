@@ -23,10 +23,15 @@ from f1sim.car import Car; from f1sim import vehicle_dynamics as vd; from f1sim 
 car = Car.from_json('cars/example_car.json'); gg = vd.build_gg_lookup(car); lap_sim.warmup(gg)"
 
 # Drop root for the actual running process — matches feierblum-networking's
-# `USER node` pattern. Nothing at runtime needs to write inside /app (no
-# uploads, no new numba compiles after the warmup above), so a plain
-# non-privileged user with read access is enough.
-RUN useradd --create-home --shell /usr/sbin/nologin appuser
+# `USER node` pattern. Almost nothing at runtime needs to write inside /app
+# (no uploads, no new numba compiles after the warmup above) — the one
+# exception is the SQLite user/subscription database, which needs a
+# writable directory owned by appuser (a bind-mounted volume at this path in
+# docker-compose.yml persists it across container recreates).
+RUN useradd --create-home --shell /usr/sbin/nologin appuser \
+    && mkdir -p /data \
+    && chown appuser:appuser /data
+ENV USERS_DB_PATH=/data/users.db
 USER appuser
 
 EXPOSE 8000

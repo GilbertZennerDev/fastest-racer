@@ -33,18 +33,59 @@ async function loadOptions() {
   tracks = trackRes;
   cars = carRes;
 
-  for (const key of Object.keys(tracks)) {
-    const opt = document.createElement("option");
-    opt.value = key;
-    opt.textContent = tracks[key].name || key;
-    trackSelect.appendChild(opt);
+  function populate(select, items) {
+    for (const key of Object.keys(items)) {
+      const opt = document.createElement("option");
+      opt.value = key;
+      const locked = items[key].locked;
+      opt.textContent = locked ? `🔒 ${items[key].name || key} (Pro)` : (items[key].name || key);
+      if (locked) opt.classList.add("locked-option");
+      select.appendChild(opt);
+    }
   }
-  for (const key of Object.keys(cars)) {
-    const opt = document.createElement("option");
-    opt.value = key;
-    opt.textContent = cars[key].name || key;
-    carSelect.appendChild(opt);
+  populate(trackSelect, tracks);
+  populate(carSelect, cars);
+}
+
+async function loadAccount() {
+  const res = await fetch("/api/auth/me");
+  const account = await res.json();
+  const statusEl_ = document.getElementById("accountStatus");
+  const actionEl = document.getElementById("accountAction");
+
+  if (account.logged_in) {
+    statusEl_.textContent = `${account.email} · ${account.tier === "pro" ? "Pro" : "Free"}`;
+    if (account.tier !== "pro") {
+      actionEl.hidden = false;
+      actionEl.textContent = "Upgrade to Pro";
+      actionEl.onclick = async (e) => {
+        e.preventDefault();
+        const res2 = await fetch("/api/billing/checkout", { method: "POST" });
+        const data = await res2.json();
+        if (res2.ok) window.location.href = data.url;
+        else alert(data.detail || "Checkout unavailable.");
+      };
+    } else {
+      actionEl.hidden = false;
+      actionEl.textContent = "Manage billing";
+      actionEl.onclick = async (e) => {
+        e.preventDefault();
+        const res2 = await fetch("/api/billing/portal", { method: "POST" });
+        const data = await res2.json();
+        if (res2.ok) window.location.href = data.url;
+        else alert(data.detail || "Billing portal unavailable.");
+      };
+    }
+  } else {
+    statusEl_.textContent = "Not signed in (free tier)";
+    actionEl.hidden = false;
+    actionEl.textContent = "Sign up / Upgrade";
+    actionEl.onclick = (e) => {
+      e.preventDefault();
+      window.location.href = "/#pricing";
+    };
   }
+  return account;
 }
 
 function setStatus(msg, isError) {
@@ -309,6 +350,12 @@ function runSimulation() {
   const carKey = carSelect.value;
   if (!trackKey || !carKey) return;
 
+  if (tracks[trackKey]?.locked || cars[carKey]?.locked) {
+    setStatus("That track/car is a Pro feature. Upgrade to unlock it.", true);
+    window.location.href = "/#pricing";
+    return;
+  }
+
   setLoading(true);
   setStatus("Running locally in your browser — building GG-diagram…");
 
@@ -374,9 +421,10 @@ spacingInput.addEventListener("input", () => { spacingOut.textContent = parseFlo
 maxiterInput.addEventListener("input", () => { maxiterOut.textContent = maxiterInput.value; });
 runBtn.addEventListener("click", runSimulation);
 
+loadAccount();
 loadOptions().then(() => {
   setStatus("Ready.");
-  if (trackSelect.value && carSelect.value) {
+  if (trackSelect.value && carSelect.value && !tracks[trackSelect.value]?.locked && !cars[carSelect.value]?.locked) {
     runSimulation();
   }
 });
