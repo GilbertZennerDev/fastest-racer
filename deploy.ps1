@@ -10,7 +10,6 @@ $ServerUser = "root"
 $ServerHost = "89.167.25.230"
 $ServerPath = "/opt/fastest-racer"
 $ImageName  = "fastest-racer:latest"
-$TarFile    = "fastest-racer.tar"
 # Windows OpenSSH does not reliably expand "~" when the path is built inside
 # a script variable and passed through as an argument, so resolve it via
 # $HOME explicitly.
@@ -27,22 +26,19 @@ function Invoke-Step {
 }
 
 Invoke-Step "Building Docker image" {
-    docker build -t $ImageName .
+    # --pull refreshes base layers so a stale local cache doesn't silently
+    # skip security patches.
+    docker build --pull -t $ImageName .
 }
-Invoke-Step "Saving image to $TarFile" { docker save -o $TarFile $ImageName }
-Invoke-Step "Copying to server" { scp -i $SshKey $TarFile "${ServerUser}@${ServerHost}:${ServerPath}/" }
-Invoke-Step "Loading image and restarting container on server" {
-    # --force-recreate is required: `docker compose up -d` alone only
-    # recreates a container when the *resolved compose config* changes, not
-    # when a mutable tag like `fastest-racer:latest` starts pointing at
-    # different image content — without it, `docker load` silently updates
-    # the local image while the running container keeps serving the old one.
-    ssh -i $SshKey "${ServerUser}@${ServerHost}" "cd $ServerPath && docker load -i $TarFile && docker compose up -d --force-recreate && rm $TarFile"
-}
-
-if (Test-Path $TarFile) {
-    Write-Host "==> Cleaning up local tar" -ForegroundColor Cyan
-    Remove-Item $TarFile
+Invoke-Step "Deploying to server" {
+    # Streams the image straight into the server's Docker daemon over SSH —
+    # no local .tar file and no separate scp hop. --force-recreate is
+    # required: `docker compose up -d` alone only recreates a container when
+    # the *resolved compose config* changes, not when a mutable tag like
+    # `fastest-racer:latest` starts pointing at different image content.
+    # `docker image prune -f` clears the now-dangling previous `:latest`
+    # layer so repeated deploys don't slowly fill the server's disk.
+    docker save $ImageName | ssh -i $SshKey "${ServerUser}@${ServerHost}" "cd $ServerPath && docker load && docker compose up -d --force-recreate && docker image prune -f"
 }
 
 Write-Host "==> Done" -ForegroundColor Green
